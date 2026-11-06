@@ -284,7 +284,8 @@ def test_low_remaining_quota_pauses_before_next_request(
     assert client.rate_limit == {"limit": 100, "remaining": 1, "reset_seconds": 9}
     assert sleeps == []
     client.get_result("campaigns/1")
-    assert len(sleeps) == 1 and 0 < sleeps[0] <= 9
+    # The wait is computed from float clock readings, so allow for rounding (seen on Windows).
+    assert len(sleeps) == 1 and 0 < sleeps[0] <= 9 + 1e-6
 
 
 @respx.mock
