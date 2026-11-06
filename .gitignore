@@ -1,0 +1,30 @@
+__pycache__/
+*.py[cod]
+
+# --- AI Shopping Feeds: credentials, local config and tool output ---
+# Never commit Apple Ads keys, client secrets or tokens.
+.env
+.env.*
+!.env.example
+secrets/
+*.pem
+*.p8
+*.key
+client_secret*.txt
+client_secret*.json
+token*.json
+# Audit logs written by the server (may contain campaign data)
+logs/
+*.jsonl
+# Tool caches, build output and OS files
+.venv/
+venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+*.egg-info/
+dist/
+build/
+.DS_Store
