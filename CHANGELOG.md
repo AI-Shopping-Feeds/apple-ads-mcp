@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- MIT licence, security policy, contributing guide, issue and pull request
+  templates, Dependabot and a pre-commit config.
+- `APPLE_ADS_ALLOW_REMOTE` and `--allow-remote`.
+- `~/.apple-ads-mcp/.env` is read after `./.env` (or only the `--env` file).
+- Docs: Apple Ads API setup, MCP client configuration and terms and data
+  handling, moved out of the README and expanded.
+
+### Changed
+- HTTP transports now **refuse** a non-loopback host unless
+  `APPLE_ADS_ALLOW_REMOTE=true` (or `--allow-remote`); they used to only warn.
+- `keygen` writes to `~/.apple-ads-mcp/secrets/` (folder 700, key 600) instead
+  of `./secrets/`, and `APPLE_ADS_PRIVATE_KEY_PATH` defaults to the key there
+  when it exists. The audit log folders are created owner-only.
+- `.env` lookup no longer depends on where the package is installed.
+- Setup uses `uvx` from git instead of a clone and virtual environment.
+- Python 3.11 or later (3.10 is end of life); tested on 3.11 to 3.15 on Linux,
+  macOS and Windows. Minimum versions raised to current releases.
+
+### Security
+- `apple_ads_request` paths may only contain letters, digits, `-`, `_`, `.`,
+  `~` and `/`, with no `.`, `..` or empty segments, and the final URL must be
+  on `api.ads.apple.com`. String IDs must be a single path segment.
+- Responses over 200 MB are refused, and one query or report collects at most
+  100,000 rows.
+
 ## [0.1.0] - 2026-11-06
 
 ### Added

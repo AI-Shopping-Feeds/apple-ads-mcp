@@ -1,132 +1,160 @@
 # Apple Ads MCP Server (read + write)
 
-An [MCP](https://modelcontextprotocol.io) server for the **Apple Ads Platform API**
-(v1). Use it from Claude Code, Claude Desktop or any MCP client to look after App
-Store campaigns: see how campaigns, ad groups and keywords are performing, find
-search terms and keyword ideas, check impression share, and change budgets, bids,
-keywords and ads, with a dry-run preview and an audit log for every change.
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE) [![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 
-App developers can review and tune their App Store campaigns from the same
-agent session as their app code. Apple Maps campaigns are covered too.
+An [MCP](https://modelcontextprotocol.io) server for [Apple Ads](https://ads.apple.com),
+built on the [Apple Ads Platform API](https://developer.apple.com/documentation/apple-ads-platform-api)
+v1. Use it from Claude, ChatGPT, Cursor, Codex or any MCP client to report on App
+Store and Apple Maps campaigns, find search terms, keyword ideas and impression
+share, and change budgets, bids, keywords and ads.
 
-Part of the AI Shopping Feeds MCP family: [Google Ads](https://github.com/AI-Shopping-Feeds/google-ads-mcp) · [Google Merchant Centre](https://github.com/AI-Shopping-Feeds/google-merchant-centre-mcp) · [Google Analytics](https://github.com/AI-Shopping-Feeds/google-analytics-mcp) · [YouTube Studio](https://github.com/AI-Shopping-Feeds/youtube-studio-mcp) · **Apple Ads**.
+Maintained by [AI Shopping Feeds](https://github.com/AI-Shopping-Feeds). It offers:
 
-> **Private repository, no licence yet.** This code is not licensed for use
-> outside AI Shopping Feeds until a licence is chosen. It is an independent tool:
-> it is not made, endorsed or supported by Apple. "Apple Ads" is used only to
-> describe the API it talks to.
+- **nearly every Platform API v1 endpoint**: campaigns, ad groups, keywords and negative keywords, ads and creatives, reports, impression share, search term popularity, recommendations, budget orders, Apple Maps and change history
+- **spend safety**: dry-run, confirm words for deletes and bulk changes, a limit on budget and bid rises, paused new campaigns and an audit log
+- **every other endpoint** through a generic `apple_ads_request` tool
+- **the current API**: Apple switches off the older Campaign Management API v5 on 26 January 2027
 
-> **Which Apple API?** Apple's older Campaign Management API (v5, the "Search
-> Ads" API at `api.searchads.apple.com`) is deprecated and is switched off on
-> **26 January 2027**. This server uses its replacement, the
-> [Apple Ads Platform API](https://developer.apple.com/documentation/apple-ads-platform-api)
-> v1 (`api.ads.apple.com/v1`), released August 2026. API credentials (client
-> ID, team ID, key ID) are created the same way for both.
+Not affiliated with or endorsed by Apple.
+
+Part of the AI Shopping Feeds MCP family: [Google Ads](https://github.com/AI-Shopping-Feeds/google-ads-mcp) · [Google Merchant Centre](https://github.com/AI-Shopping-Feeds/google-merchant-centre-mcp) · [Google Analytics](https://github.com/AI-Shopping-Feeds/google-analytics-mcp) · [YouTube Studio](https://github.com/AI-Shopping-Feeds/youtube-studio-mcp) · [Amazon Ads](https://github.com/AI-Shopping-Feeds/amazon-ads-mcp) · **Apple Ads** · [Microsoft Ads](https://github.com/AI-Shopping-Feeds/microsoft-ads-mcp) · [TikTok Ads](https://github.com/AI-Shopping-Feeds/tiktok-ads-mcp) · [Pinterest Ads](https://github.com/AI-Shopping-Feeds/pinterest-ads-mcp) · [Snapchat Ads](https://github.com/AI-Shopping-Feeds/snapchat-ads-mcp) · [OpenAI Ads](https://github.com/AI-Shopping-Feeds/openai-ads-mcp) · [AppLovin](https://github.com/AI-Shopping-Feeds/applovin-mcp).
+
+## Let your agent set it up
+
+Paste this into Claude Code, Codex, Cursor or any agent that can read web pages and edit files:
+
+```text
+Set up the Apple Ads MCP server for me by following https://raw.githubusercontent.com/AI-Shopping-Feeds/apple-ads-mcp/main/skills/apple-ads-mcp/SKILL.md
+```
+
+The agent checks whether it's already connected, installs the runner if you
+agree, walks you through the Apple Ads API user, key pair and IDs, adds the server to your
+client's config without touching your other servers, and checks it works by
+calling `apple_ads_health_check`.
+
+The same file is an [Agent Skill](https://agentskills.io), so your agent can keep it as a guide to using the tools well. For Claude Code, copy the folder into your skills:
+
+```bash
+git clone --depth 1 https://github.com/AI-Shopping-Feeds/apple-ads-mcp.git /tmp/apple-ads-mcp
+cp -r /tmp/apple-ads-mcp/skills/apple-ads-mcp ~/.claude/skills/
+```
+
+Other agents that support skills load the same `skills/apple-ads-mcp` folder from their own skills directory.
 
 ## What it can do
 
-89 tools in 13 groups (full list in [docs/tools.md](docs/tools.md)):
+89 tools, all prefixed `apple_ads_`. The full list is in [docs/tools.md](docs/tools.md).
 
-- **Accounts:** who the API user is, which ad accounts and roles it has.
-- **Apps:** search the App Store, app details, ad eligibility, rejection
-  reasons, custom product pages.
-- **Campaigns, ad groups, keywords, negative keywords, ads, creatives:** list,
-  read, create, update, pause, delete, with shortcuts for daily budgets, default
-  bids and status.
-- **Reports:** campaign, ad group, ad, keyword and search term reports with
-  granularity, grouping and time zone, plus a one-call performance summary
-  (spend, taps, installs, CPT, cost per install).
-- **Insights:** impression share by search term, search term popularity.
-- **Recommendations and suggestions:** Apple's budget and target CPA
-  recommendations (apply or dismiss), keyword and phrase suggestions.
-- **Budget orders, Apple Maps** (brands, locations, location groups, assets),
-  **change history**.
-- **`apple_ads_request`:** an escape hatch for any Platform API endpoint
-  without its own tool.
+### Read
 
-## Set up (about 20 minutes)
+| Area | Tools |
+|---|---|
+| Accounts | `get_me`, `list_acls` (ad account IDs and roles), `get_org`, `get_ad_account`, `get_advertiser_resources` |
+| Apps | `search_apps`, `get_app`, `check_app_eligibility`, rejection reasons, supported languages, custom product pages |
+| Structure | `query_campaigns`, `get_campaign`, `query_adgroups`, `query_keywords`, `query_negative_keywords`, `query_ads`, `query_creatives` |
+| Reports | `report` (campaigns, ad groups, ads, keywords, search terms), `performance_summary` (spend, taps, installs, CPT, cost per install) |
+| Insights and ideas | `impression_share`, `search_term_popularity`, `keyword_suggestions`, `suggestions`, `query_recommendations` |
+| More | budget orders, Apple Maps brands, locations and assets, `query_change_history`, `search_geo` |
+| Server | `describe_server`, `health_check`, `audit_tail`, `audit_lookup` |
 
-You need: an Apple Ads account with admin access, a Mac with Python 3.10 or
-later (or [uv](https://docs.astral.sh/uv/)), and Claude Code or Claude Desktop.
+### Write
 
-### 1. Create an API user in Apple Ads
+| Area | Tools |
+|---|---|
+| Campaigns | `create_campaign` (starts paused), `update_campaign`, `set_campaign_status`, `set_campaign_daily_budget`, `delete_campaign` |
+| Ad groups | `create_adgroup`, `update_adgroup`, `set_adgroup_status`, `set_adgroup_bid`, `delete_adgroup` |
+| Keywords | `add_keywords`, `update_keywords`, `delete_keywords`, and the same for negative keywords |
+| Ads and creatives | `create_ad`, `update_ad`, `delete_ad`, `create_creative`, `update_creative`, `delete_creative` |
+| Recommendations | `apply_recommendations`, `dismiss_recommendations` |
+| Budget orders and Apple Maps | `create_budget_order`, `update_budget_order`, `delete_budget_order`, location groups, `delete_asset` |
+| Any endpoint | `request` |
 
-Apple Ads API access belongs to a *user*, not to the account, so you invite a
-user (it can be yourself on a second Apple Account) with an API role.
+### Safety
 
-1. Go to [ads.apple.com](https://ads.apple.com), choose **Sign In > Advanced**,
-   and sign in as an account administrator.
-2. In the **Users** menu (top right), pick the account to give access to.
-3. Choose **Account Settings > User Management**, then **Invite Users**.
-4. Enter the person's first name, last name and Apple Account email.
-5. Under **User Access and Role**, choose an API role:
-   - **API Account Manager**: read and write (needed to change campaigns).
-   - **API Account Read Only**: reports and reading only. A safe start.
-6. Click **Send Invite**. The invited person gets an email with a secure code,
-   opens the link, enters the code, and their API user is active.
+- Dry-run (`APPLE_ADS_DRY_RUN=true` or `apple_ads_set_dry_run`) previews and logs writes without sending them. Reads and reports still work.
+- Deletes need `confirm='DELETE'`. Bulk changes, applying recommendations, budget orders and raw writes need `confirm='APPLY'`.
+- Budget and bid rises above `APPLE_ADS_MAX_INCREASE_PCT` (default 20%) need `confirm='APPLY'`, and the refusal shows the change, e.g. `dailyBudget: 10.00 -> 15.00 (+50%)`. New campaigns start paused.
+- Every write and dry-run is recorded in an append-only audit log (`~/.apple-ads-mcp/logs/audit.jsonl`) with a `before` snapshot. Entries older than `APPLE_ADS_AUDIT_RETENTION_DAYS` (default 30) are deleted at startup, and `apple-ads-mcp purge` deletes the log.
+- `APPLE_ADS_READ_ONLY=true` hides every tool that can change the account; `APPLE_ADS_TOOL_GROUPS` exposes only the groups you need. Every tool carries a title and MCP read-only/destructive hints.
+- The HTTP transports have no sign-in, so the server refuses to listen on anything but localhost unless you set `APPLE_ADS_ALLOW_REMOTE=true`.
+- Report data stays in memory and is never written to disk. How the server fits Apple's terms: [docs/terms-and-data.md](docs/terms-and-data.md).
 
-### 2. Install the server
+## Supported clients
 
-```bash
-gh repo clone AI-Shopping-Feeds/apple-ads-mcp ~/code/apple-ads-mcp
-cd ~/code/apple-ads-mcp
-python3 -m venv .venv            # or: uv venv --python 3.12 .venv
-.venv/bin/pip install -e .
+| Client | Works? | How |
+|---|---|---|
+| Claude Code | ✅ | Local server, `claude mcp add` (below) |
+| Claude Desktop | ✅ | Local server, `claude_desktop_config.json` |
+| Cursor | ✅ | Local server, `~/.cursor/mcp.json` |
+| VS Code (Copilot) | ✅ | Local server, `.vscode/mcp.json` (uses `servers` instead of `mcpServers`) |
+| Codex | ✅ | Local server, `~/.codex/config.toml` |
+| Gemini CLI | ✅ | Local server, `~/.gemini/settings.json` |
+| Windsurf and other local clients | ✅ | Local server, same JSON entry |
+| Claude.ai and ChatGPT | ❌ not yet | These need a remote server with sign-in. This server's HTTP transports have no sign-in, so don't expose them publicly. Use a local client. |
+
+## Setup
+
+### 1. Install uv
+
+The server runs with `uvx` from [uv](https://docs.astral.sh/uv/getting-started/installation/)
+(`brew install uv` on macOS) and needs Python 3.11 or later. It installs straight
+from this repository:
+
+```shell
+uvx --from git+https://github.com/AI-Shopping-Feeds/apple-ads-mcp.git apple-ads-mcp
 ```
 
-### 3. Make a key pair
+Pin a release by adding `@vX.Y.Z` to the URL.
 
-```bash
-.venv/bin/apple-ads-mcp keygen
-```
+### 2. Get credentials
 
-This creates `secrets/private-key.pem` (readable only by you, and ignored by
-git) and `secrets/public-key.pem`, and prints the **public** key. The private
-key never leaves your Mac and is never printed.
+1. **API user:** in [Apple Ads](https://ads.apple.com), an account administrator
+   invites a user under **Account Settings > User Management** with the
+   **API Account Read Only** or **API Account Manager** (read and write) role.
+2. **Key pair:** make one on your computer. The private key stays in
+   `~/.apple-ads-mcp/secrets/`; the command prints the public key:
 
-### 4. Upload the public key and copy your IDs
+   ```shell
+   uvx --from git+https://github.com/AI-Shopping-Feeds/apple-ads-mcp.git apple-ads-mcp keygen
+   ```
 
-1. Sign in to [ads.apple.com](https://ads.apple.com) **as the API user** from
-   step 1.
-2. Choose **Account Settings > API**.
-3. Paste the whole public key, including the `-----BEGIN PUBLIC KEY-----` and
-   `-----END PUBLIC KEY-----` lines, into **Public Key**, and click **Save**.
-4. Apple shows three values above the key. Copy them:
-   - `clientId` (starts with `SEARCHADS.`)
-   - `teamId` (also starts with `SEARCHADS.`)
-   - `keyId`
+3. **Upload and copy your IDs:** signed in as the API user, paste the public key
+   into **Account Settings > API** and copy the `clientId`, `teamId` and `keyId`
+   Apple shows.
 
-### 5. Add the server to Claude
+Step by step, including how to find your ad account ID and the rules for
+working on clients' accounts: [docs/setup-apple-ads-api.md](docs/setup-apple-ads-api.md).
 
-Replace the placeholders with your values and the real path to the folder.
-Start with `APPLE_ADS_DRY_RUN=true` so nothing can change until you're happy.
+### 3. Add it to your client
 
-**Claude Code** (one command; keeps your other servers):
+Replace the placeholders. Keep your other servers in each file. Start with
+`APPLE_ADS_DRY_RUN=true` so nothing changes until you're happy.
+
+**Claude Code**
 
 ```bash
 claude mcp add --scope user apple-ads \
   --env APPLE_ADS_CLIENT_ID=SEARCHADS.your-client-id \
   --env APPLE_ADS_TEAM_ID=SEARCHADS.your-team-id \
   --env APPLE_ADS_KEY_ID=your-key-id \
-  --env APPLE_ADS_PRIVATE_KEY_PATH=/abs/path/to/apple-ads-mcp/secrets/private-key.pem \
+  --env APPLE_ADS_PRIVATE_KEY_PATH=/abs/path/private-key.pem \
   --env APPLE_ADS_DRY_RUN=true \
-  -- /abs/path/to/apple-ads-mcp/.venv/bin/apple-ads-mcp run
+  -- uvx --from git+https://github.com/AI-Shopping-Feeds/apple-ads-mcp.git apple-ads-mcp
 ```
 
-**Claude Desktop:** open Settings > Developer > Edit Config, and add this inside
-`"mcpServers"` (keep the servers already there). Paths must be absolute.
+**Claude Desktop, Cursor, Gemini CLI, Windsurf** (and VS Code under `servers`)
 
 ```json
 {
   "mcpServers": {
     "apple-ads": {
-      "command": "/abs/path/to/apple-ads-mcp/.venv/bin/apple-ads-mcp",
-      "args": ["run"],
+      "command": "uvx",
+      "args": ["--from", "git+https://github.com/AI-Shopping-Feeds/apple-ads-mcp.git", "apple-ads-mcp"],
       "env": {
         "APPLE_ADS_CLIENT_ID": "SEARCHADS.your-client-id",
         "APPLE_ADS_TEAM_ID": "SEARCHADS.your-team-id",
         "APPLE_ADS_KEY_ID": "your-key-id",
-        "APPLE_ADS_PRIVATE_KEY_PATH": "/abs/path/to/apple-ads-mcp/secrets/private-key.pem",
+        "APPLE_ADS_PRIVATE_KEY_PATH": "/abs/path/private-key.pem",
         "APPLE_ADS_DRY_RUN": "true"
       }
     }
@@ -134,25 +162,24 @@ claude mcp add --scope user apple-ads \
 }
 ```
 
-Restart Claude Desktop afterwards.
+Desktop apps often can't find `uvx` on the PATH; if the server doesn't start, use
+the full path from `which uvx` as the `command`.
 
-### 6. Check it works and pick your ad account
+**Codex** (`~/.codex/config.toml`)
 
-Ask Claude: *"Run the Apple Ads health check."* It calls
-`apple_ads_health_check`, which gets a token and lists every ad account the API
-user can see, with its ID and role. Add the one you want as the default:
+```toml
+[mcp_servers.apple-ads]
+command = "uvx"
+args = ["--from", "git+https://github.com/AI-Shopping-Feeds/apple-ads-mcp.git", "apple-ads-mcp"]
+env = { APPLE_ADS_CLIENT_ID = "SEARCHADS.your-client-id", APPLE_ADS_TEAM_ID = "SEARCHADS.your-team-id", APPLE_ADS_KEY_ID = "your-key-id", APPLE_ADS_PRIVATE_KEY_PATH = "/abs/path/private-key.pem", APPLE_ADS_DRY_RUN = "true" }
+```
 
-- Claude Code: run the `claude mcp add` command again with
-  `--env APPLE_ADS_AD_ACCOUNT_ID=123456789` (remove the old entry first with
-  `claude mcp remove apple-ads`).
-- Claude Desktop: add `"APPLE_ADS_AD_ACCOUNT_ID": "123456789"` to `env`.
+### 4. Check it works
 
-Any tool can also take `ad_account_id` to work on a different account for one
-call. When you're ready to make real changes, set `APPLE_ADS_DRY_RUN=false`
-(or ask Claude to turn dry-run off for the session).
-
-If the health check fails with "token request failed", the client, team or key
-ID doesn't match the uploaded public key: check them in Account Settings > API.
+Restart or reload the client, then ask it to "run the Apple Ads health check". It should
+call `apple_ads_health_check` and list the ad accounts your API user can see. Add the one
+you want as `APPLE_ADS_AD_ACCOUNT_ID`, and set `APPLE_ADS_DRY_RUN=false` when you're ready
+to make real changes.
 
 ## Configuration
 
@@ -161,94 +188,21 @@ ID doesn't match the uploaded public key: check them in Account Settings > API.
 | `APPLE_ADS_CLIENT_ID` | yes | `clientId` from Account Settings > API |
 | `APPLE_ADS_TEAM_ID` | yes | `teamId` from Account Settings > API |
 | `APPLE_ADS_KEY_ID` | yes | `keyId` from Account Settings > API |
-| `APPLE_ADS_PRIVATE_KEY_PATH` | yes | Path to the private key from `apple-ads-mcp keygen` |
-| `APPLE_ADS_AD_ACCOUNT_ID` | recommended | Default ad account (sent as `X-AP-Context: adAccountId=…`) |
+| `APPLE_ADS_PRIVATE_KEY_PATH` | yes | Path to the private key from `apple-ads-mcp keygen`. Can be left out if it's at `~/.apple-ads-mcp/secrets/private-key.pem` |
+| `APPLE_ADS_AD_ACCOUNT_ID` | recommended | Default ad account (sent as `X-AP-Context: adAccountId=…`). Any tool can override it with `ad_account_id` |
 | `APPLE_ADS_DRY_RUN` | no | `true` previews and logs writes without sending them |
 | `APPLE_ADS_READ_ONLY` | no | `true` registers only read-only tools (plus the meta tools) |
-| `APPLE_ADS_MAX_INCREASE_PCT` | no | Budget/bid rises above this % need `confirm='APPLY'` (default 20) |
-| `APPLE_ADS_TOOL_GROUPS` | no | Comma-separated groups to register: `accounts`, `apps`, `geo`, `campaigns`, `adgroups`, `keywords`, `ads`, `budget_orders`, `reports`, `recommendations`, `maps`, `change_history`, `advanced` (default all). Unknown names stop the server |
+| `APPLE_ADS_TOOL_GROUPS` | no | Comma-separated groups to register (default all): `accounts`, `apps`, `geo`, `campaigns`, `adgroups`, `keywords`, `ads`, `budget_orders`, `reports`, `recommendations`, `maps`, `change_history`, `advanced`. Unknown names stop the server |
+| `APPLE_ADS_MAX_INCREASE_PCT` | no | Budget and bid rises above this % need `confirm='APPLY'` (default 20) |
 | `APPLE_ADS_AUDIT_LOG` | no | Audit log path (default `~/.apple-ads-mcp/logs/audit.jsonl`) |
 | `APPLE_ADS_AUDIT_RETENTION_DAYS` | no | Audit entries older than this are deleted at startup (default 30) |
-| `APPLE_ADS_PAGE_SIZE` | no | Page size for `/query` calls, 1 to 1000 (default 100) |
-| `APPLE_ADS_TIMEOUT` | no | Per-request timeout in seconds (default 30) |
-| `APPLE_ADS_LOG_LEVEL` | no | `DEBUG`, `INFO`, `WARNING` or `ERROR` (logs go to stderr) |
-| `APPLE_ADS_TRANSPORT` | no | `stdio` (default) or `streamable-http` (served at `http://HOST:PORT/mcp`; `sse` is deprecated) |
-| `APPLE_ADS_HOST`, `APPLE_ADS_PORT` | no | Bind address for HTTP transports (default `127.0.0.1:8000`). There is no sign-in, so keep it on localhost |
+| `APPLE_ADS_PAGE_SIZE`, `APPLE_ADS_TIMEOUT`, `APPLE_ADS_LOG_LEVEL` | no | `/query` page size (1 to 1000, default 100), request timeout in seconds (default 30) and log level |
+| `APPLE_ADS_TRANSPORT`, `APPLE_ADS_HOST`, `APPLE_ADS_PORT` | no | `stdio` (default), `streamable-http` (served at `http://HOST:PORT/mcp`) or `sse` (deprecated by the MCP spec; logs a warning), and its bind address (default `127.0.0.1:8000`) |
+| `APPLE_ADS_ALLOW_REMOTE` | no | `true` (or `--allow-remote`) lets the HTTP transports bind to a non-loopback host. Off by default: there is no sign-in |
 
-CLI: `apple-ads-mcp run` (default), `keygen`, `purge`, `describe`, `version`.
-
-## Safety
-
-Writes change live campaigns and spend real money, so:
-
-- **Dry-run.** `APPLE_ADS_DRY_RUN=true` or `apple_ads_set_dry_run(true)`: write
-  tools return the exact request that would be sent and log it, but send
-  nothing. Reads still work, so the agent can rehearse a whole change.
-- **Confirm strings.** Deletes need `confirm='DELETE'`. Bulk changes (more than
-  one keyword, say), applying Apple's recommendations, creating budget orders,
-  raw writes through `apple_ads_request`, and any budget or bid **increase
-  above `APPLE_ADS_MAX_INCREASE_PCT`** (or a bid set where the current one
-  can't be read) need `confirm='APPLY'`. The server reads the current value
-  first, so the refusal says exactly what would change, e.g.
-  `dailyBudget: 10.00 -> 15.00 (+50%)`.
-- **New campaigns start paused** unless you pass `start_paused=false`.
-- **Audit log.** Every write and dry-run is appended to a JSONL file with the
-  request, Apple's response and a `before` snapshot of the entity where it is
-  cheap to read. `apple_ads_audit_tail` and `apple_ads_audit_lookup` show it.
-- **Read-only mode and tool groups** limit what the agent can do at all.
-
-The server's instructions tell the agent to rehearse in dry-run, show you
-what will change, and only then run it for real.
-
-Money in Apple Ads is an object with a decimal string, in the ad account's
-currency: `{"amount": "1.50", "currency": "GBP"}`. Campaign daily budgets wrap
-it: `{"dailyBudget": {"value": {"amount": "20.00", "currency": "GBP"}}}`.
-
-## Terms and data handling
-
-This is a summary of how the server is built to fit the
-[Apple Ads Terms of Service](https://ads.apple.com/terms-of-service) (effective
-28 July 2026). It isn't legal advice; read the terms themselves.
-
-- **Reporting data is confidential.** Apple treats Apple Ads Reporting Metrics
-  as Confidential Information, to be used only to exercise your rights under
-  the terms and shared only with employees or consultants who need it. The
-  server keeps report rows, insights and every other read response in memory
-  only. The audit log holds write requests, `before` snapshots and write
-  responses, never report data, and entries are deleted after
-  `APPLE_ADS_AUDIT_RETENTION_DAYS` (30 by default). `apple-ads-mcp purge`
-  deletes the audit log; access tokens and client secrets are never written
-  to disk, so there is no token cache to delete.
-- **Your AI provider sees what the agent sees.** Report data and campaign
-  details returned to Claude (or any AI client) are sent to that AI provider.
-  Use the server only under business or API terms that don't train on your
-  inputs, and don't paste report data into consumer chat products.
-- **Keys and secrets.** The private key lives in the git-ignored `secrets/`
-  folder with mode 600. Keys, client secrets and access tokens are never
-  logged, and they're stripped from error messages and audit entries.
-- **Network.** The server calls only Apple: `appleid.apple.com` for tokens and
-  `api.ads.apple.com` for the API. There is no telemetry. `apple_ads_request`
-  accepts paths, not URLs, so it can't be pointed elsewhere.
-- **Rate limits.** The client reads Apple's `RateLimit-Limit`,
-  `RateLimit-Remaining` and `RateLimit-Reset` headers, pauses when the quota is
-  nearly used, and on `429` waits for `Retry-After` (then `RateLimit-Reset`,
-  then an exponential backoff up to 16 seconds), as Apple's rate limit guide
-  describes.
-- **Working on someone else's account.** The terms require that, when you use
-  Apple Ads on behalf of a third party (for example a client's account), you
-  are authorised by them and bind them to the Apple Ads terms. Apple's help
-  page [Use the Apple Ads Platform API](https://ads.apple.com/app-store/help/campaigns/0022-use-the-apple-ads-platform-api)
-  says third-party service providers should register a third-party OAuth 2
-  application by contacting ads-registration@group.apple.com, and that the
-  client's Account Admin or Campaign Group Manager then grants the provider
-  access, with only one third-party provider per Apple Ads account at a time.
-  The developer docs' "Managing Ad Accounts and API Access" page (checked 6
-  November 2026) doesn't cover third-party providers. Before using this
-  server on a client's account, get their written authorisation and check
-  with Apple whether you need to register as a provider. For your own apps,
-  the API user set up above is all you need.
-- **Apple's marks.** No Apple logos or badges are used, and nothing here
-  claims Apple's endorsement.
+Settings can also go in `~/.apple-ads-mcp/.env`, `./.env` or a file passed with `--env`.
+See [docs/mcp-client-config.md](docs/mcp-client-config.md) for the order, file locations
+and the command line (`run`, `keygen`, `purge`, `describe`, `version`).
 
 ## Example prompts
 
@@ -257,46 +211,33 @@ How did my App Store campaigns do over the last 7 days? Which one has the worst 
 ```
 
 ```text
-Show the search terms for my UK search campaign last month and suggest negatives.
+Show last month's search terms for my US campaign and suggest negative keywords for the ones with spend and no installs.
 ```
 
 ```text
-Raise the daily budget of my US search campaign to £30. Use dry-run first and show me the change.
+Raise the daily budget of my UK campaign to £30. Use dry-run first and show me the change.
 ```
 
 ```text
-Which keywords in the 442 campaign have impression share under 30%?
+Which keywords in my main campaign have impression share under 30%?
 ```
-
-## How it's built
-
-A small Python package (`src/apple_ads_mcp`) on the official MCP Python SDK:
-`auth.py` signs the ES256 client secret and caches the access token,
-`client.py` is a thin httpx client (account header, retries, rate limits,
-pagination, dry-run, audit), `guard.py` holds the spend checks, and
-`tools/` has one module per tool group.
-
-Apple publishes an official Python client,
-[`apple-ads-platform`](https://github.com/apple/apple-ads-platform-api-python)
-(MIT). This server doesn't use it, because it needs Python 3.12 or later (this
-package supports 3.10+), it is built on urllib3 (so the offline respx test
-suite can't mock it), and dry-run, the audit log and the spend guards need
-one request choke point that also serves the raw `apple_ads_request` tool.
-The API calls here follow Apple's documentation for the same endpoints.
-
-### Development
-
-```bash
-python3 -m venv .venv && .venv/bin/pip install -e ".[test]" ruff mypy
-.venv/bin/ruff check src tests && .venv/bin/ruff format --check src tests
-.venv/bin/mypy src/apple_ads_mcp
-.venv/bin/pytest
-```
-
-Tests run offline with mocked Apple endpoints and a throwaway key.
 
 ## More docs
 
 - [All tools](docs/tools.md)
+- [Apple Ads API setup](docs/setup-apple-ads-api.md): API user, key pair, IDs, ad account and third-party rules
+- [MCP client configuration and every environment variable](docs/mcp-client-config.md)
+- [Terms and data handling](docs/terms-and-data.md)
 - [Agent skill](skills/apple-ads-mcp/SKILL.md): setup and usage guide for agents
-- [Changelog](CHANGELOG.md)
+- [Changelog](CHANGELOG.md) and [security policy](SECURITY.md)
+
+## Contributing and licence
+
+Issues and pull requests are welcome on [this repository](https://github.com/AI-Shopping-Feeds/apple-ads-mcp). See
+[CONTRIBUTING.md](CONTRIBUTING.md).
+
+Licensed under the [MIT License](LICENSE).
+
+---
+
+Try out [AI Shopping Feeds](https://aishoppingfeeds.com/), our shopping feed management tool (including Google Shopping feeds).

@@ -25,7 +25,8 @@ override it for one call.
 | **change_history** | `apple_ads_query_change_history`, `apple_ads_get_change_detail` |
 | **advanced** | `apple_ads_request` |
 
-CLI: `apple-ads-mcp run`, `keygen`, `purge`, `describe`, `version`.
+CLI: `apple-ads-mcp run`, `keygen`, `purge`, `describe`, `version`. Options and
+every setting are in [mcp-client-config.md](mcp-client-config.md).
 
 ## Endpoint coverage
 
@@ -49,6 +50,12 @@ method goes through dry-run and the audit log and needs `confirm='APPLY'`
   and offset pagination. Tools follow pages up to `max_items`; Apple caps
   `pageSize` at 1000 for entity queries, 5000 for reports and 10000 for
   impression share. Deleted entities are returned only if you filter for them.
+  One call collects at most 100,000 rows (`max_items` / `max_rows`), and a
+  single response over 200 MB is refused: narrow the request instead.
+- **Paths and IDs.** `apple_ads_request` takes a path such as
+  `/v1/campaigns/query`, not a URL. Paths may only contain letters, digits,
+  `-`, `_`, `.`, `~` and `/` (no `..`, no query string: use `query`). String
+  IDs must be a single path segment.
 - **Partial updates.** `PUT` changes only the fields you send, but arrays
   replace the whole existing array: read first, send the full list.
 - **Bulk.** Keyword and negative keyword writes use Apple's bulk endpoints

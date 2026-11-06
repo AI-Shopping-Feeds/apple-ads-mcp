@@ -1,6 +1,7 @@
 ---
 name: apple-ads-mcp
 description: Set up and use the Apple Ads MCP server (Apple Ads Platform API v1, read + write). Use when the person wants to connect Apple Ads to their agent, or to report on App Store or Apple Maps campaigns, find search terms, keywords and impression share, or change campaigns, budgets, bids, keywords, negative keywords and ads.
+license: MIT
 metadata:
   homepage: https://github.com/AI-Shopping-Feeds/apple-ads-mcp
 ---
@@ -23,80 +24,124 @@ and **Work with the tools** explains how to use it well.
 
 ## Set up
 
+Follow these steps when the person asks you to set up or connect Apple Ads.
+
 ### 1. Check whether it is already connected
 
 If you can see tools such as `apple_ads_describe_server`, call it and then
 `apple_ads_health_check`. If the health check passes and lists the right ad
 account, setup is done: skip to **Work with the tools**.
 
-### 2. Install
+### 2. Install the runner
 
-The repository is private. With GitHub access:
+The server runs on this computer with `uvx` (from [uv](https://docs.astral.sh/uv/))
+or `pipx`, and needs Python 3.11 or later. If neither is installed, ask the
+person before installing uv (`brew install uv` on macOS, or see
+https://docs.astral.sh/uv/getting-started/installation/). The server command is:
 
-```bash
-gh repo clone AI-Shopping-Feeds/apple-ads-mcp
-cd apple-ads-mcp
-python3 -m venv .venv && .venv/bin/pip install -e .
+```shell
+uvx --from git+https://github.com/AI-Shopping-Feeds/apple-ads-mcp.git apple-ads-mcp
 ```
 
-It needs Python 3.10 or later.
+### 3. Get credentials (the person does the Apple Ads steps)
 
-### 3. Credentials (the person does the Apple Ads steps)
+Ask what the person already has. They need:
 
-1. **API user.** An account admin signs in at ads.apple.com (Sign In >
-   Advanced), opens Account Settings > User Management > Invite Users and
-   invites a user with the role **API Account Manager** (read/write) or
-   **API Account Read Only**. The invitee accepts with the emailed code.
-2. **Key pair.** Run `.venv/bin/apple-ads-mcp keygen`. It writes
-   `secrets/private-key.pem` (mode 600, git-ignored) and prints the public key.
-   Never print, open, copy or paste the private key.
-3. **Upload.** Signed in as the API user: Account Settings > API, paste the
+1. **An API user.** An account administrator signs in at ads.apple.com
+   (Sign In > Advanced), opens Account Settings > User Management > Invite
+   Users and invites a user with the role **API Account Read Only** (reports
+   only; suggest it if that's all they need) or **API Account Manager** (read
+   and write). The invitee accepts with the emailed code.
+2. **A key pair.** You can run this for them; it writes
+   `~/.apple-ads-mcp/secrets/private-key.pem` (mode 600) and prints the public
+   key and the path to use for `APPLE_ADS_PRIVATE_KEY_PATH`:
+   ```shell
+   uvx --from git+https://github.com/AI-Shopping-Feeds/apple-ads-mcp.git apple-ads-mcp keygen
+   ```
+   Never print, open, copy or paste the private key, and don't move it into a
+   project folder or git repository.
+3. **The IDs.** Signed in as the API user: Account Settings > API, paste the
    public key (with its BEGIN/END lines), Save. Apple then shows `clientId`,
    `teamId` and `keyId`; the person gives you these three values.
 
+If they want to use it on a client's account, point them to the third-party
+rules in
+[docs/setup-apple-ads-api.md](https://github.com/AI-Shopping-Feeds/apple-ads-mcp/blob/main/docs/setup-apple-ads-api.md#working-on-other-peoples-accounts)
+first.
+
+Optional settings to suggest:
+
+- **`APPLE_ADS_DRY_RUN=true`:** start with it, so nothing changes until they're happy.
+- **`APPLE_ADS_READ_ONLY=true`:** registers only read-only tools. Suggest it when
+  the person only wants reports.
+- **`APPLE_ADS_TOOL_GROUPS`:** e.g. `campaigns,adgroups,keywords,reports`. Fewer
+  tools means less context and better tool choice.
+- **`APPLE_ADS_MAX_INCREASE_PCT`** (default 20) and
+  **`APPLE_ADS_AUDIT_RETENTION_DAYS`** (default 30).
+
 ### 4. Add the server to the client
 
-Add to the existing config and never remove the person's other servers.
-Start with `APPLE_ADS_DRY_RUN=true`.
+Add to the existing config, and never remove the person's other MCP servers.
+Replace the placeholders; use absolute paths.
 
 **Claude Code:**
 
 ```bash
 claude mcp add --scope user apple-ads \
-  --env APPLE_ADS_CLIENT_ID=SEARCHADS.… \
-  --env APPLE_ADS_TEAM_ID=SEARCHADS.… \
-  --env APPLE_ADS_KEY_ID=… \
-  --env APPLE_ADS_PRIVATE_KEY_PATH=/abs/path/apple-ads-mcp/secrets/private-key.pem \
+  --env APPLE_ADS_CLIENT_ID=SEARCHADS.CLIENT_ID \
+  --env APPLE_ADS_TEAM_ID=SEARCHADS.TEAM_ID \
+  --env APPLE_ADS_KEY_ID=KEY_ID \
+  --env APPLE_ADS_PRIVATE_KEY_PATH=PATH_TO_PRIVATE_KEY \
   --env APPLE_ADS_DRY_RUN=true \
-  -- /abs/path/apple-ads-mcp/.venv/bin/apple-ads-mcp run
+  -- uvx --from git+https://github.com/AI-Shopping-Feeds/apple-ads-mcp.git apple-ads-mcp
 ```
 
-**Claude Desktop** (`claude_desktop_config.json`, under `mcpServers`):
+**Claude Desktop:** add this under `mcpServers` in `claude_desktop_config.json`
+(macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`;
+Windows: `%APPDATA%\Claude\claude_desktop_config.json`), then ask the person to
+quit and reopen Claude. Desktop apps often can't see `uvx` on the PATH, so use
+its full path from `which uvx`.
 
 ```json
 "apple-ads": {
-  "command": "/abs/path/apple-ads-mcp/.venv/bin/apple-ads-mcp",
-  "args": ["run"],
+  "command": "/full/path/to/uvx",
+  "args": ["--from", "git+https://github.com/AI-Shopping-Feeds/apple-ads-mcp.git", "apple-ads-mcp"],
   "env": {
-    "APPLE_ADS_CLIENT_ID": "SEARCHADS.…",
-    "APPLE_ADS_TEAM_ID": "SEARCHADS.…",
-    "APPLE_ADS_KEY_ID": "…",
-    "APPLE_ADS_PRIVATE_KEY_PATH": "/abs/path/apple-ads-mcp/secrets/private-key.pem",
+    "APPLE_ADS_CLIENT_ID": "SEARCHADS.CLIENT_ID",
+    "APPLE_ADS_TEAM_ID": "SEARCHADS.TEAM_ID",
+    "APPLE_ADS_KEY_ID": "KEY_ID",
+    "APPLE_ADS_PRIVATE_KEY_PATH": "PATH_TO_PRIVATE_KEY",
     "APPLE_ADS_DRY_RUN": "true"
   }
 }
 ```
 
-Optional: `APPLE_ADS_AD_ACCOUNT_ID` (default ad account),
-`APPLE_ADS_READ_ONLY=true` (reading and reports only; suggest it when the
-person only wants reports), `APPLE_ADS_TOOL_GROUPS` (e.g.
-`campaigns,adgroups,keywords,reports`), `APPLE_ADS_MAX_INCREASE_PCT`
-(default 20), `APPLE_ADS_AUDIT_RETENTION_DAYS` (default 30).
+**Cursor:** add the same entry under `mcpServers` in `~/.cursor/mcp.json` (the
+user-level file, never a project's `.cursor/mcp.json`).
+
+**Codex:** add to `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.apple-ads]
+command = "uvx"
+args = ["--from", "git+https://github.com/AI-Shopping-Feeds/apple-ads-mcp.git", "apple-ads-mcp"]
+env = { APPLE_ADS_CLIENT_ID = "SEARCHADS.CLIENT_ID", APPLE_ADS_TEAM_ID = "SEARCHADS.TEAM_ID", APPLE_ADS_KEY_ID = "KEY_ID", APPLE_ADS_PRIVATE_KEY_PATH = "PATH_TO_PRIVATE_KEY", APPLE_ADS_DRY_RUN = "true" }
+```
+
+**Any other client** that runs local servers: the command `uvx` with the
+arguments above and the same environment variables. Never set
+`APPLE_ADS_TRANSPORT` to an HTTP transport on a public address: it has no
+sign-in, and the server refuses unless `APPLE_ADS_ALLOW_REMOTE=true`.
 
 ### 5. Check it works
 
-Restart the client, call `apple_ads_health_check`, and show the person the
-ad accounts it lists. Set the one they want as `APPLE_ADS_AD_ACCOUNT_ID`.
+Most clients load new servers only after a restart or reload. Ask the person to
+do that, then call `apple_ads_describe_server` and `apple_ads_health_check`.
+Show the person the ad accounts the health check lists, and add the one they
+want as `APPLE_ADS_AD_ACCOUNT_ID` (Claude Code: `claude mcp remove apple-ads`,
+then add it again with the extra `--env`). Turn dry-run off only when they ask.
+
+If it fails, see **Troubleshooting** at the end.
 
 ## Work with the tools
 
@@ -163,6 +208,12 @@ by more than the limit).
 
 ## Troubleshooting
 
+- **A tool is missing:** check `tool_groups` and `read_only` in
+  `apple_ads_describe_server`, then change `APPLE_ADS_TOOL_GROUPS` /
+  `APPLE_ADS_READ_ONLY`.
+- **"Missing Apple Ads API credentials":** a required variable isn't set in the
+  client config. `APPLE_ADS_PRIVATE_KEY_PATH` can be left out only if the key is
+  at `~/.apple-ads-mcp/secrets/private-key.pem`.
 - **"Apple token request failed (HTTP 400/401)":** client, team or key ID
   doesn't match the uploaded public key, or the key was replaced.
 - **"No ad account selected":** set `APPLE_ADS_AD_ACCOUNT_ID` or pass

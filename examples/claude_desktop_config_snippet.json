@@ -1,13 +1,13 @@
 {
   "mcpServers": {
     "apple-ads": {
-      "command": "/absolute/path/to/apple-ads-mcp/.venv/bin/apple-ads-mcp",
-      "args": ["run"],
+      "command": "uvx",
+      "args": ["--from", "git+https://github.com/AI-Shopping-Feeds/apple-ads-mcp.git", "apple-ads-mcp"],
       "env": {
         "APPLE_ADS_CLIENT_ID": "SEARCHADS.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
         "APPLE_ADS_TEAM_ID": "SEARCHADS.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
         "APPLE_ADS_KEY_ID": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
-        "APPLE_ADS_PRIVATE_KEY_PATH": "/absolute/path/to/apple-ads-mcp/secrets/private-key.pem",
+        "APPLE_ADS_PRIVATE_KEY_PATH": "/abs/path/private-key.pem",
         "APPLE_ADS_AD_ACCOUNT_ID": "123456789",
         "APPLE_ADS_DRY_RUN": "true"
       }
