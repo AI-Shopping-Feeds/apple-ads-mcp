@@ -6,7 +6,8 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-DEFAULT_AUDIT_LOG_NAME = "audit.jsonl"
+from .paths import default_audit_path, default_env_file, default_private_key_path
+
 # "sse" (HTTP+SSE) is deprecated by the MCP spec; prefer "streamable-http".
 TRANSPORTS = ("stdio", "streamable-http", "sse")
 
@@ -52,6 +53,8 @@ class Config:
     tool_groups: list[str] = field(default_factory=list)
     # Register only tools annotated read-only (plus the meta tools).
     read_only: bool = False
+    # HTTP transports refuse non-loopback hosts unless this is set.
+    allow_remote: bool = False
 
 
 def _path_or_none(raw: str | None) -> Path | None:
@@ -60,9 +63,28 @@ def _path_or_none(raw: str | None) -> Path | None:
     return Path(raw).expanduser().resolve()
 
 
-def default_audit_path() -> Path:
-    # Not the working directory: desktop clients often start servers in '/'.
-    return Path.home() / ".apple-ads-mcp" / "logs" / DEFAULT_AUDIT_LOG_NAME
+def load_env_files(env_file: Path | None = None) -> list[Path]:
+    """Load settings from .env files without overriding real environment variables.
+
+    With `--env`, only that file is read. Otherwise ./.env, then
+    ~/.apple-ads-mcp/.env; the first file to set a variable wins.
+    """
+    candidates = [env_file] if env_file is not None else [Path.cwd() / ".env", default_env_file()]
+    loaded: list[Path] = []
+    for candidate in candidates:
+        if candidate.is_file():
+            load_dotenv(dotenv_path=candidate, override=False)
+            loaded.append(candidate)
+    return loaded
+
+
+def _private_key_setting() -> Path | None:
+    """APPLE_ADS_PRIVATE_KEY_PATH, or the keygen default if that file exists."""
+    configured = _path_or_none(os.environ.get("APPLE_ADS_PRIVATE_KEY_PATH"))
+    if configured is not None:
+        return configured
+    default = default_private_key_path()
+    return default if default.is_file() else None
 
 
 def _int(name: str, default: str) -> int:
@@ -81,36 +103,33 @@ def _float(name: str, default: str) -> float:
 
 def load_audit_settings(env_file: Path | None = None) -> tuple[Path, int]:
     """Audit path and retention only, without requiring credentials (used by `purge`)."""
-    load_dotenv(dotenv_path=env_file, override=False) if env_file else load_dotenv(override=False)
+    load_env_files(env_file)
     path = _path_or_none(os.environ.get("APPLE_ADS_AUDIT_LOG")) or default_audit_path()
     return path, _int("APPLE_ADS_AUDIT_RETENTION_DAYS", "30")
 
 
 def load_config(env_file: Path | None = None) -> Config:
-    """Read configuration from environment (and optional .env file).
+    """Read configuration from the environment and .env files (see `load_env_files`).
 
     Raises RuntimeError with actionable messages on misconfiguration."""
-    if env_file is not None:
-        load_dotenv(dotenv_path=env_file, override=False)
-    else:
-        load_dotenv(override=False)
+    load_env_files(env_file)
 
+    key_path = _private_key_setting()
     missing = [
         name
-        for name in (
-            "APPLE_ADS_CLIENT_ID",
-            "APPLE_ADS_TEAM_ID",
-            "APPLE_ADS_KEY_ID",
-            "APPLE_ADS_PRIVATE_KEY_PATH",
-        )
+        for name in ("APPLE_ADS_CLIENT_ID", "APPLE_ADS_TEAM_ID", "APPLE_ADS_KEY_ID")
         if not os.environ.get(name, "").strip()
     ]
-    if missing:
+    if key_path is None:
+        missing.append("APPLE_ADS_PRIVATE_KEY_PATH")
+    if missing or key_path is None:
         raise RuntimeError(
             f"Missing Apple Ads API credentials: {', '.join(missing)}.\n"
             "  - Generate a key pair with `apple-ads-mcp keygen` and upload the public key in\n"
             "    Apple Ads > Account Settings > API (signed in as the API user).\n"
-            "  - Copy the clientId, teamId and keyId shown there into your MCP config or .env."
+            "  - Copy the clientId, teamId and keyId shown there into your MCP config or .env.\n"
+            f"  - APPLE_ADS_PRIVATE_KEY_PATH defaults to {default_private_key_path()} when that\n"
+            "    file exists."
         )
 
     client_id = os.environ["APPLE_ADS_CLIENT_ID"].strip()
@@ -118,8 +137,6 @@ def load_config(env_file: Path | None = None) -> Config:
         raise RuntimeError(
             f"APPLE_ADS_CLIENT_ID should start with 'SEARCHADS.', got '{client_id[:20]}…'."
         )
-    key_path = _path_or_none(os.environ["APPLE_ADS_PRIVATE_KEY_PATH"])
-    assert key_path is not None
     if not key_path.exists():
         raise RuntimeError(
             f"APPLE_ADS_PRIVATE_KEY_PATH points to a missing file: {key_path}\n"
@@ -163,4 +180,5 @@ def load_config(env_file: Path | None = None) -> Config:
         port=_int("APPLE_ADS_PORT", "8000"),
         tool_groups=parse_tool_groups(os.environ.get("APPLE_ADS_TOOL_GROUPS")),
         read_only=_truthy(os.environ.get("APPLE_ADS_READ_ONLY")),
+        allow_remote=_truthy(os.environ.get("APPLE_ADS_ALLOW_REMOTE")),
     )

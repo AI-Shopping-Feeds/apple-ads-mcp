@@ -12,15 +12,14 @@ pruned when the server starts (`prune`).
 
 from __future__ import annotations
 
-import contextlib
 import json
-import os
 import threading
 import time
 import uuid
 from pathlib import Path
 from typing import Any
 
+from .paths import chmod_private, ensure_private_dir
 from .redact import redact
 
 
@@ -63,12 +62,12 @@ class AuditLog:
         }
         line = json.dumps(redact(entry), ensure_ascii=False, default=str)
         with self._lock:
-            self.path.parent.mkdir(parents=True, exist_ok=True)
+            ensure_private_dir(self.path.parent)
             new_file = not self.path.exists()
             with self.path.open("a", encoding="utf-8") as f:
                 f.write(line + "\n")
             if new_file:
-                _chmod_private(self.path)
+                chmod_private(self.path)
         return audit_id
 
     def entries(self) -> list[dict[str, Any]]:
@@ -114,7 +113,7 @@ class AuditLog:
                 with tmp.open("w", encoding="utf-8") as f:
                     for e in keep:
                         f.write(json.dumps(e, ensure_ascii=False, default=str) + "\n")
-                _chmod_private(tmp)
+                chmod_private(tmp)
                 tmp.replace(self.path)
         return removed
 
@@ -125,9 +124,3 @@ class AuditLog:
                 self.path.unlink()
                 return True
         return False
-
-
-def _chmod_private(path: Path) -> None:
-    if os.name == "posix":
-        with contextlib.suppress(OSError):
-            path.chmod(0o600)

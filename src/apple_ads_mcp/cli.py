@@ -3,8 +3,9 @@
 Subcommands:
 
 * `apple-ads-mcp run`       (default) start the MCP server.
-* `apple-ads-mcp keygen`    create the EC P-256 key pair; prints the public key to
-                            paste into Apple Ads. The private key never leaves disk.
+* `apple-ads-mcp keygen`    create the EC P-256 key pair in ~/.apple-ads-mcp/secrets;
+                            prints the public key to paste into Apple Ads. The
+                            private key never leaves disk.
 * `apple-ads-mcp purge`     delete the audit log (tokens are memory-only).
 * `apple-ads-mcp describe`  print the effective configuration (no secrets).
 * `apple-ads-mcp version`   print the package version.
@@ -12,8 +13,8 @@ Subcommands:
 
 from __future__ import annotations
 
+import ipaddress
 import json
-import os
 import sys
 from pathlib import Path
 
@@ -22,11 +23,29 @@ import click
 from . import __version__
 from ._logging import configure_default, get_logger
 from .config import TRANSPORTS, load_audit_settings, load_config
+from .paths import (
+    PRIVATE_KEY_NAME,
+    PUBLIC_KEY_NAME,
+    chmod_private,
+    default_private_key_path,
+    default_secrets_dir,
+    ensure_private_dir,
+    write_private,
+)
 from .server import build_server
 
 logger = get_logger("cli")
 
-_LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
+
+def is_loopback(host: str) -> bool:
+    """True for localhost and loopback addresses (127.0.0.0/8, ::1)."""
+    name = host.strip().strip("[]").lower()
+    if name == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(name).is_loopback
+    except ValueError:
+        return False
 
 
 @click.group(invoke_without_command=True)
@@ -34,7 +53,7 @@ _LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
     "--env",
     "env_file",
     type=click.Path(dir_okay=False, path_type=Path),
-    help="Path to a .env file. Defaults to ./.env.",
+    help="Path to a .env file. Defaults to ./.env, then ~/.apple-ads-mcp/.env.",
 )
 @click.option(
     "--transport",
@@ -48,6 +67,13 @@ _LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
 @click.option(
     "--port", type=int, default=None, help="Bind port for streamable-http / sse (default 8000)."
 )
+@click.option(
+    "--allow-remote",
+    is_flag=True,
+    default=False,
+    help="Allow an HTTP transport to bind to a non-loopback host (same as "
+    "APPLE_ADS_ALLOW_REMOTE=true). The server has no sign-in: don't.",
+)
 @click.pass_context
 def cli(
     ctx: click.Context,
@@ -55,6 +81,7 @@ def cli(
     transport: str | None,
     host: str | None,
     port: int | None,
+    allow_remote: bool,
 ) -> None:
     """Apple Ads MCP server."""
     ctx.ensure_object(dict)
@@ -62,6 +89,7 @@ def cli(
     ctx.obj["transport"] = transport
     ctx.obj["host"] = host
     ctx.obj["port"] = port
+    ctx.obj["allow_remote"] = allow_remote
     if ctx.invoked_subcommand is None:
         ctx.invoke(run)
 
@@ -74,19 +102,30 @@ def run(ctx: click.Context) -> None:
     config = load_config(env_file=ctx.obj.get("env_file"))
     if ctx.obj.get("transport"):
         config.transport = ctx.obj["transport"]
-    if ctx.obj.get("host"):
+    if ctx.obj.get("host") is not None:
         config.host = ctx.obj["host"]
-    if ctx.obj.get("port"):
+    if ctx.obj.get("port") is not None:
         config.port = ctx.obj["port"]
+    if ctx.obj.get("allow_remote"):
+        config.allow_remote = True
 
-    mcp = build_server(config=config)
-
-    if config.transport != "stdio" and config.host not in _LOOPBACK_HOSTS:
+    if config.transport != "stdio" and not is_loopback(config.host):
+        if not config.allow_remote:
+            raise click.ClickException(
+                f"Refusing to serve {config.transport} on {config.host!r}: the server has no "
+                "sign-in, so anyone who can reach that address could use your Apple Ads "
+                "credentials and spend your budget. Use 127.0.0.1 (the default), or set "
+                "APPLE_ADS_ALLOW_REMOTE=true (or pass --allow-remote) if you have put your own "
+                "authentication in front of it."
+            )
         logger.warning(
             "binding to %s: the server has no authentication, so anyone who can reach "
             "this address can use your Apple Ads credentials and spend your budget",
             config.host,
         )
+
+    mcp = build_server(config=config)
+
     if config.transport == "stdio":
         mcp.run("stdio")
     elif config.transport == "streamable-http":
@@ -102,48 +141,37 @@ def run(ctx: click.Context) -> None:
         raise click.ClickException(f"Unknown transport: {config.transport}")
 
 
-def _write_private(path: Path, data: bytes) -> None:
-    """Create `path` with mode 0600 from the start (no window where it's world-readable)."""
-    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
-    fd = os.open(path, flags, 0o600)
-    try:
-        os.write(fd, data)
-    finally:
-        os.close(fd)
-    if os.name == "posix":
-        path.chmod(0o600)
-
-
 @cli.command()
 @click.option(
     "--dir",
     "out_dir",
     type=click.Path(file_okay=False, path_type=Path),
-    default=Path("secrets"),
-    show_default=True,
-    help="Folder for private-key.pem and public-key.pem (keep it out of git).",
+    default=None,
+    help="Folder for private-key.pem and public-key.pem "
+    "(default ~/.apple-ads-mcp/secrets). Keep it out of git.",
 )
 @click.option("--force", is_flag=True, help="Overwrite an existing key pair.")
-def keygen(out_dir: Path, force: bool) -> None:
+def keygen(out_dir: Path | None, force: bool) -> None:
     """Create an EC P-256 key pair for the Apple Ads API user.
 
-    Writes private-key.pem (mode 600) and public-key.pem, then prints the public
-    key. Paste it into Apple Ads > Account Settings > API while signed in as the
-    API user. The private key is never printed or logged.
+    Writes private-key.pem (mode 600) and public-key.pem to
+    ~/.apple-ads-mcp/secrets (mode 700), then prints the public key. Paste it
+    into Apple Ads > Account Settings > API while signed in as the API user.
+    The private key is never printed or logged.
     """
     from cryptography.hazmat.primitives import serialization
     from cryptography.hazmat.primitives.asymmetric import ec
 
-    private_path = out_dir / "private-key.pem"
-    public_path = out_dir / "public-key.pem"
+    out_dir = (out_dir or default_secrets_dir()).expanduser().resolve()
+    private_path = out_dir / PRIVATE_KEY_NAME
+    public_path = out_dir / PUBLIC_KEY_NAME
     if private_path.exists() and not force:
         raise click.ClickException(
             f"{private_path} already exists. Use --force to replace it (you'll have to "
             "upload the new public key to Apple Ads and update APPLE_ADS_KEY_ID)."
         )
-    out_dir.mkdir(parents=True, exist_ok=True)
-    if os.name == "posix":
-        out_dir.chmod(0o700)
+    ensure_private_dir(out_dir)
+    chmod_private(out_dir, 0o700)
 
     key = ec.generate_private_key(ec.SECP256R1())
     private_pem = key.private_bytes(
@@ -155,14 +183,16 @@ def keygen(out_dir: Path, force: bool) -> None:
         encoding=serialization.Encoding.PEM,
         format=serialization.PublicFormat.SubjectPublicKeyInfo,
     )
-    _write_private(private_path, private_pem)
+    write_private(private_path, private_pem)
     public_path.write_bytes(public_pem)
 
-    click.echo(f"Private key saved to {private_path.resolve()} (mode 600). Keep it secret.")
-    click.echo(f"Public key saved to {public_path.resolve()}.\n")
+    click.echo(f"Private key saved to {private_path} (mode 600). Keep it secret.")
+    click.echo(f"Public key saved to {public_path}.\n")
     click.echo("Paste this public key into Apple Ads > Account Settings > API:\n")
     click.echo(public_pem.decode("ascii"))
-    click.echo(f"Then set APPLE_ADS_PRIVATE_KEY_PATH={private_path.resolve()}")
+    click.echo(f"Then set APPLE_ADS_PRIVATE_KEY_PATH={private_path}")
+    if private_path == default_private_key_path().resolve():
+        click.echo("(The server also looks there by default if the variable isn't set.)")
 
 
 @cli.command()
@@ -216,6 +246,7 @@ def describe(ctx: click.Context) -> None:
         "transport": config.transport,
         "host": config.host,
         "port": config.port,
+        "allow_remote": config.allow_remote,
     }
     click.echo(json.dumps(info, indent=2, ensure_ascii=False))
 

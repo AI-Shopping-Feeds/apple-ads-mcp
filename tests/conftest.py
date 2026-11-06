@@ -1,11 +1,14 @@
 """Shared fixtures for the test suite.
 
 All tests run fully offline: Apple's token and API endpoints are mocked with
-respx, and the private key is a throwaway generated per test session.
+respx, and the private key is a throwaway generated per test session. The
+home folder and working directory point at a temporary folder, so a real
+~/.apple-ads-mcp or ./.env on the machine running the tests is never read.
 """
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +21,21 @@ from apple_ads_mcp.client import AppleAdsClient
 from apple_ads_mcp.config import Config
 
 ACCOUNT = "123456789"
+
+# Windows has no POSIX permission bits, so mode assertions only run elsewhere.
+posix_only = pytest.mark.skipif(os.name != "posix", reason="POSIX file modes")
+
+
+@pytest.fixture(autouse=True)
+def isolated_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    cwd = tmp_path / "cwd"
+    cwd.mkdir()
+    monkeypatch.chdir(cwd)
+    return home
 
 
 class FakeAuth:
