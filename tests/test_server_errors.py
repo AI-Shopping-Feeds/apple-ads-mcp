@@ -10,6 +10,9 @@ from mcp.server.mcpserver.exceptions import ToolError
 from apple_ads_mcp.client import AppleAdsAPIError
 from apple_ads_mcp.server import AppleAdsMCPServer
 
+# A fake JWT-shaped string that must be redacted.
+FAKE_JWT = "eyJhbGciOiJFUzI1NiJ9.eyJzdWIiOiJ4In0.c2ln"  # pragma: allowlist secret
+
 
 def _server() -> AppleAdsMCPServer:
     mcp = AppleAdsMCPServer("test")
@@ -27,7 +30,7 @@ def _server() -> AppleAdsMCPServer:
     @mcp.tool()
     def apple_ads_leaks() -> dict:
         """Error text containing a token."""
-        raise RuntimeError("upstream said Bearer eyJhbGciOiJFUzI1NiJ9.eyJzdWIiOiJ4In0.c2ln")
+        raise RuntimeError(f"upstream said Bearer {FAKE_JWT}")
 
     @mcp.tool()
     def apple_ads_crashes() -> dict:

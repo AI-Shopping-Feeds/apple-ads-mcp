@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..client import AppleAdsClient
+from ..client import AppleAdsClient, path_segment
 from ._common import flt, query_body
 
 
@@ -138,7 +138,10 @@ def register(mcp, client: AppleAdsClient) -> None:
         product_page_id: str, ad_account_id: str | None = None
     ) -> dict[str, Any]:
         """One custom product page, including its deep link (GET /v1/product-pages/{id})."""
-        return client.get_result(f"product-pages/{product_page_id}", ad_account_id=ad_account_id)
+        return client.get_result(
+            f"product-pages/{path_segment(product_page_id, 'product_page_id')}",
+            ad_account_id=ad_account_id,
+        )
 
     @mcp.tool()
     def apple_ads_query_product_page_locales(

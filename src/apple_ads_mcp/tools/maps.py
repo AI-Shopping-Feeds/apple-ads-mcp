@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..client import AppleAdsClient
+from ..client import AppleAdsClient, path_segment
 from ._common import guarded_delete, guarded_update, query_body
 
 
@@ -33,7 +33,9 @@ def register(mcp, client: AppleAdsClient) -> None:
     @mcp.tool()
     def apple_ads_get_brand(brand_id: str, ad_account_id: str | None = None) -> dict[str, Any]:
         """One Apple Maps brand (GET /v1/business-brands/{id})."""
-        return client.get_result(f"business-brands/{brand_id}", ad_account_id=ad_account_id)
+        return client.get_result(
+            f"business-brands/{path_segment(brand_id, 'brand_id')}", ad_account_id=ad_account_id
+        )
 
     @mcp.tool()
     def apple_ads_query_business_categories(
@@ -49,7 +51,10 @@ def register(mcp, client: AppleAdsClient) -> None:
         category_id: str, ad_account_id: str | None = None
     ) -> dict[str, Any]:
         """One Apple Maps business category (GET /v1/business-categories/{id})."""
-        return client.get_result(f"business-categories/{category_id}", ad_account_id=ad_account_id)
+        return client.get_result(
+            f"business-categories/{path_segment(category_id, 'category_id')}",
+            ad_account_id=ad_account_id,
+        )
 
     @mcp.tool()
     def apple_ads_query_brand_rejection_reasons(
@@ -75,7 +80,9 @@ def register(mcp, client: AppleAdsClient) -> None:
         location_id: str, ad_account_id: str | None = None
     ) -> dict[str, Any]:
         """One business location (GET /v1/locations/{id})."""
-        return client.get_result(f"locations/{location_id}", ad_account_id=ad_account_id)
+        return client.get_result(
+            f"locations/{path_segment(location_id, 'location_id')}", ad_account_id=ad_account_id
+        )
 
     @mcp.tool()
     def apple_ads_query_location_groups(
@@ -92,9 +99,8 @@ def register(mcp, client: AppleAdsClient) -> None:
         location_group_id: str, ad_account_id: str | None = None
     ) -> dict[str, Any]:
         """One location group (GET /v1/location-groups/{id})."""
-        return client.get_result(
-            f"location-groups/{location_group_id}", ad_account_id=ad_account_id
-        )
+        gid = path_segment(location_group_id, "location_group_id")
+        return client.get_result(f"location-groups/{gid}", ad_account_id=ad_account_id)
 
     @mcp.tool()
     def apple_ads_create_location_group(
@@ -118,10 +124,11 @@ def register(mcp, client: AppleAdsClient) -> None:
         location_group_id: str, update: dict[str, Any], ad_account_id: str | None = None
     ) -> dict[str, Any]:
         """Partially update a location group (PUT /v1/location-groups/{id}). Arrays replace."""
+        gid = path_segment(location_group_id, "location_group_id")
         return guarded_update(
             client,
-            get_path=f"location-groups/{location_group_id}",
-            put_path=f"location-groups/{location_group_id}",
+            get_path=f"location-groups/{gid}",
+            put_path=f"location-groups/{gid}",
             update=update,
             confirm="",
             op="update_location_group",
@@ -133,12 +140,13 @@ def register(mcp, client: AppleAdsClient) -> None:
         location_group_id: str, confirm: str = "", ad_account_id: str | None = None
     ) -> dict[str, Any]:
         """Delete a location group (DELETE /v1/location-groups/{id}). confirm: must be 'DELETE'."""
+        gid = path_segment(location_group_id, "location_group_id")
         return guarded_delete(
             client,
-            path=f"location-groups/{location_group_id}",
+            path=f"location-groups/{gid}",
             confirm=confirm,
             op="delete_location_group",
-            what=f"location group {location_group_id}",
+            what=f"location group {gid}",
             ad_account_id=ad_account_id,
         )
 
@@ -154,18 +162,20 @@ def register(mcp, client: AppleAdsClient) -> None:
     @mcp.tool()
     def apple_ads_get_asset(asset_id: str, ad_account_id: str | None = None) -> dict[str, Any]:
         """One Apple Maps creative asset (GET /v1/assets/{id})."""
-        return client.get_result(f"assets/{asset_id}", ad_account_id=ad_account_id)
+        aid = path_segment(asset_id, "asset_id")
+        return client.get_result(f"assets/{aid}", ad_account_id=ad_account_id)
 
     @mcp.tool()
     def apple_ads_delete_asset(
         asset_id: str, confirm: str = "", ad_account_id: str | None = None
     ) -> dict[str, Any]:
         """Delete an Apple Maps creative asset (DELETE /v1/assets/{id}). confirm: must be 'DELETE'."""
+        aid = path_segment(asset_id, "asset_id")
         return guarded_delete(
             client,
-            path=f"assets/{asset_id}",
+            path=f"assets/{aid}",
             confirm=confirm,
             op="delete_asset",
-            what=f"asset {asset_id}",
+            what=f"asset {aid}",
             ad_account_id=ad_account_id,
         )

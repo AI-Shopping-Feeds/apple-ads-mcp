@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..client import AppleAdsClient
+from ..client import AppleAdsClient, path_segment
 from ._common import flt
 
 
@@ -46,4 +46,6 @@ def register(mcp, client: AppleAdsClient) -> None:
         detail_id: str, ad_account_id: str | None = None
     ) -> dict[str, Any]:
         """Field-level old and new values for one change (GET /v1/change-history/{detailId})."""
-        return client.get_result(f"change-history/{detail_id}", ad_account_id=ad_account_id)
+        return client.get_result(
+            f"change-history/{path_segment(detail_id, 'detail_id')}", ad_account_id=ad_account_id
+        )

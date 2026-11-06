@@ -10,7 +10,9 @@ api.ads.apple.com (this module). There is no telemetry.
 
 from __future__ import annotations
 
+import json
 import random
+import re
 import time
 from collections.abc import Callable
 from typing import Any, Literal
@@ -34,6 +36,13 @@ MAX_BACKOFF = 16.0
 RATE_LIMIT_LOW_WATER = 2
 MAX_PROACTIVE_WAIT = 60.0
 QUERY_MAX_PAGE_SIZE = 1000
+# Hard ceilings so one call can't exhaust memory: bytes in a single response,
+# and rows collected across the pages of one query or report.
+MAX_RESPONSE_BYTES = 200 * 1024 * 1024
+MAX_ROWS = 100_000
+# Path characters allowed after normalising: RFC 3986 unreserved plus '/'.
+_SAFE_PATH_RE = re.compile(r"[A-Za-z0-9._~/-]*")
+_SAFE_SEGMENT_RE = re.compile(r"[A-Za-z0-9._~-]+")
 
 ContextMode = Literal["account", "optional", "none"]
 
@@ -45,6 +54,10 @@ class AppleAdsAPIError(Exception):
         self.status = status
         self.body = redact(body)
         super().__init__(message or f"Apple Ads API error {status}: {_summarise_error(self.body)}")
+
+
+class ResponseTooLargeError(AppleAdsAPIError):
+    """A response was bigger than MAX_RESPONSE_BYTES; nothing more is read."""
 
 
 def _summarise_error(body: Any) -> str:
@@ -67,19 +80,52 @@ def _summarise_error(body: Any) -> str:
 def normalise_path(path: str) -> str:
     """Accept 'campaigns/1', '/campaigns/1', '/v1/campaigns/1' or 'v1/campaigns/1'.
 
-    Rejects absolute URLs so the server can't be pointed at another host.
+    Rejects absolute URLs, '.' and '..' segments, and anything outside letters,
+    digits, '-', '_', '.', '~' and '/', so a path can't reach another host,
+    smuggle a query string or escape /v1. Query parameters go in `params`.
     """
     p = path.strip()
-    if "://" in p or p.startswith("//"):
+    if "://" in p or p.startswith("//") or p.startswith("\\\\"):
         raise ValueError("Pass a path such as '/v1/campaigns/query', not a full URL.")
     p = p.lstrip("/")
     if p.startswith("v1/"):
         p = p[3:]
     elif p == "v1":
         p = ""
-    if ".." in p.split("/"):
-        raise ValueError("Path may not contain '..'.")
+    segments = p.split("/")
+    if ".." in segments or "." in segments:
+        raise ValueError("Path may not contain '.' or '..' segments.")
+    if "" in segments[:-1]:
+        raise ValueError("Path may not contain empty segments ('//').")
+    if not _SAFE_PATH_RE.fullmatch(p):
+        raise ValueError(
+            "Path may only contain letters, digits, '-', '_', '.', '~' and '/'. "
+            "Pass query parameters separately."
+        )
     return p
+
+
+def path_segment(value: str | int, name: str = "id") -> str:
+    """Check an ID is a single safe path segment before it's put into a path."""
+    text = str(value).strip()
+    if text in (".", "..") or not _SAFE_SEGMENT_RE.fullmatch(text):
+        raise ValueError(
+            f"{name} must be a single ID made of letters, digits, '-', '_', '.' or '~', "
+            f"got {text[:40]!r}"
+        )
+    return text
+
+
+def check_row_limit(requested: int | None, name: str = "max_items") -> int:
+    """Rows to collect at most: `requested`, or MAX_ROWS when None. Refuses more than MAX_ROWS."""
+    if requested is None:
+        return MAX_ROWS
+    if requested > MAX_ROWS:
+        raise ValueError(
+            f"{name} can be at most {MAX_ROWS}; narrow the request with filters or a "
+            "shorter date range."
+        )
+    return requested
 
 
 class AppleAdsClient:
@@ -161,6 +207,8 @@ class AppleAdsClient:
         method = method.upper()
         rel = normalise_path(path)
         url = f"{BASE_URL}/{rel}" if rel else BASE_URL
+        if httpx.URL(url).host != API_HOST:  # defence in depth; normalise_path already checks
+            raise ValueError(f"Refusing to call a host other than {API_HOST}.")
         is_write = method in WRITE_METHODS and not read_only
         headers, account = self._context_header(context, ad_account_id)
         op_name = op or f"{method} /v1/{rel}"
@@ -187,8 +235,10 @@ class AppleAdsClient:
                 "note": "Dry-run: nothing was sent to Apple Ads.",
             }
 
-        resp = self._send(method, url, rel, params=params, json_body=json_body, headers=headers)
-        payload: Any = self._safe_json(resp) if resp.content else {}
+        resp, content = self._send(
+            method, url, rel, params=params, json_body=json_body, headers=headers
+        )
+        payload: Any = _parse_json(content) if content else {}
 
         if not (200 <= resp.status_code < 300):
             if is_write:
@@ -241,20 +291,25 @@ class AppleAdsClient:
         params: dict[str, Any] | None,
         json_body: Any | None,
         headers: dict[str, str],
-    ) -> httpx.Response:
+    ) -> tuple[httpx.Response, bytes]:
         backoff = 2.0
         refreshed = False
         last_exc: Exception | None = None
         for attempt in range(MAX_ATTEMPTS):
             self._pace()
             try:
-                resp = self._http.request(
+                request = self._http.build_request(
                     method,
                     url,
                     params=params,
                     json=json_body,
                     headers={**headers, "Authorization": f"Bearer {self.auth.access_token()}"},
                 )
+                resp = self._http.send(request, stream=True)
+                try:
+                    content = _read_capped(resp, MAX_RESPONSE_BYTES)
+                finally:
+                    resp.close()
             except httpx.RequestError as e:
                 last_exc = e
                 logger.warning(
@@ -295,7 +350,7 @@ class AppleAdsClient:
                 self._sleep(min(wait, 120.0))
                 backoff = min(backoff * 2, MAX_BACKOFF)
                 continue
-            return resp
+            return resp, content
 
         if last_exc is not None:
             raise AppleAdsAPIError(0, redact_text(str(last_exc)), "Apple Ads API unreachable")
@@ -341,11 +396,11 @@ class AppleAdsClient:
         """POST a `/query`-style request and follow offset pagination.
 
         Returns {"result": [...], "pagination": {...}, "truncated": bool}.
+        Collects at most `max_items` rows (MAX_ROWS when None).
         """
+        max_items = check_row_limit(max_items)
         body = dict(body or {})
-        size = min(page_size or self.config.page_size, max_page_size)
-        if max_items is not None:
-            size = max(1, min(size, max_items))
+        size = max(1, min(page_size or self.config.page_size, max_page_size, max_items))
         pagination = dict(body.get("pagination") or {})
         offset = int(pagination.get("offset", 0))
         rows: list[Any] = []
@@ -369,7 +424,7 @@ class AppleAdsClient:
             if isinstance(pag, dict) and pag.get("totalCount") is not None:
                 total = int(pag["totalCount"])
             offset += len(page)
-            if max_items is not None and len(rows) >= max_items:
+            if len(rows) >= max_items:
                 truncated = total is None or total > max_items
                 rows = rows[:max_items]
                 break
@@ -403,12 +458,33 @@ class AppleAdsClient:
         except Exception:
             return None
 
-    @staticmethod
-    def _safe_json(resp: httpx.Response) -> Any:
-        try:
-            return resp.json()
-        except ValueError:
-            return {"_raw": resp.text[:2000]}
+
+def _parse_json(content: bytes) -> Any:
+    try:
+        return json.loads(content)
+    except ValueError:
+        return {"_raw": content[:2000].decode("utf-8", errors="replace")}
+
+
+def _read_capped(resp: httpx.Response, limit: int) -> bytes:
+    """Read a streamed response body, refusing anything over `limit` bytes."""
+    too_large = ResponseTooLargeError(
+        resp.status_code,
+        "response too large",
+        f"Apple Ads API response is larger than {limit // (1024 * 1024)} MB, so it was "
+        "not read. Ask for less: fewer rows, a shorter date range or more filters.",
+    )
+    declared = resp.headers.get("Content-Length")
+    if declared and declared.isdigit() and int(declared) > limit:
+        raise too_large
+    chunks: list[bytes] = []
+    size = 0
+    for chunk in resp.iter_bytes():
+        size += len(chunk)
+        if size > limit:
+            raise too_large
+        chunks.append(chunk)
+    return b"".join(chunks)
 
 
 def _rows(payload: Any) -> list[Any]:

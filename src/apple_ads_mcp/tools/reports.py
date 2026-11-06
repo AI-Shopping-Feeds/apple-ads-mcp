@@ -21,7 +21,7 @@ from typing import Any
 
 from mcp.server.mcpserver import Context
 
-from ..client import AppleAdsClient
+from ..client import AppleAdsClient, check_row_limit
 from ._common import flt
 from ._progress import report, run_blocking
 
@@ -119,6 +119,7 @@ def register(mcp, client: AppleAdsClient) -> None:
         if level not in LEVELS:
             raise ValueError(f"level must be one of {', '.join(LEVELS)}")
         path = f"reports/{prod}/{level}/query"
+        max_rows = check_row_limit(max_rows, "max_rows")
         size = max(1, min(max_rows, REPORT_MAX_PAGE_SIZE))
         rows: list[Any] = []
         summary: Any = None
@@ -331,6 +332,7 @@ def register(mcp, client: AppleAdsClient) -> None:
             body["filters"] = all_filters
         if sorting:
             body["sorting"] = sorting[:2]
+        check_row_limit(max_rows, "max_rows")
         return client.query(
             "insights/apps/impression-share/query",
             body,
@@ -370,6 +372,7 @@ def register(mcp, client: AppleAdsClient) -> None:
         }
         if sorting:
             body["sorting"] = sorting
+        check_row_limit(max_rows, "max_rows")
         return client.query(
             "insights/apps/search-term-popularity/query",
             body,

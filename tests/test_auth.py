@@ -18,9 +18,12 @@ from apple_ads_mcp.auth import (
     build_client_secret,
 )
 
-CLIENT_ID = "SEARCHADS.aeb3ef5f-0c5a-4f2a-99c8-fca83f25a9"
-TEAM_ID = "SEARCHADS.hgw3ef3p-0w7a-8a2n-77c8-scv83f25a7"
-KEY_ID = "a273d0d3-4d9e-458c-a173-0db8619ca7d7"
+# Obviously fake identifiers: never real Apple Ads values.
+CLIENT_ID = "SEARCHADS.00000000-0000-0000-0000-00000000c1d0"
+TEAM_ID = "SEARCHADS.00000000-0000-0000-0000-0000000007ea"
+KEY_ID = "00000000-0000-0000-0000-0000000000ee"
+# A fake JWT-shaped string that must be redacted.
+FAKE_JWT = "eyJhbGciOiJFUzI1NiJ9.eyJzdWIiOiJ4In0.sig"  # pragma: allowlist secret
 
 
 def test_client_secret_claims_and_signature(ec_key) -> None:
@@ -166,7 +169,7 @@ def test_token_error_is_redacted_and_helpful(key_file: Path) -> None:
     respx.post(TOKEN_URL).mock(
         return_value=httpx.Response(
             400,
-            json={"error": "invalid_client", "echo": "eyJhbGciOiJFUzI1NiJ9.eyJzdWIiOiJ4In0.sig"},
+            json={"error": "invalid_client", "echo": FAKE_JWT},
         )
     )
     auth = _auth(key_file, Clock())

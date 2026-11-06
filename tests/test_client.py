@@ -9,16 +9,26 @@ import httpx
 import pytest
 import respx
 
+from apple_ads_mcp import client as client_module
 from apple_ads_mcp.audit import AuditLog
-from apple_ads_mcp.client import BASE_URL, AppleAdsAPIError, AppleAdsClient, normalise_path
+from apple_ads_mcp.client import (
+    BASE_URL,
+    MAX_ROWS,
+    AppleAdsAPIError,
+    AppleAdsClient,
+    ResponseTooLargeError,
+    normalise_path,
+    path_segment,
+)
 
-from .conftest import ACCOUNT, FakeAuth
+from .conftest import ACCOUNT, FakeAuth, posix_only
 
 
 def _audit_lines(path) -> list[dict]:
     if not path.exists():
         return []
-    return [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+    text = path.read_text(encoding="utf-8")
+    return [json.loads(line) for line in text.splitlines() if line.strip()]
 
 
 @respx.mock
@@ -75,10 +85,82 @@ def test_paths_are_normalised(raw: str, expected: str) -> None:
     assert normalise_path(raw) == expected
 
 
-@pytest.mark.parametrize("bad", ["https://evil.example/v1/x", "//evil.example/x", "v1/../x"])
-def test_other_hosts_and_traversal_are_refused(bad: str) -> None:
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "https://evil.example/v1/x",
+        "//evil.example/x",
+        "v1/../x",
+        "campaigns/./1",
+        "campaigns//1",
+        "campaigns?offset=1",
+        "campaigns/1#frag",
+        "campaigns/%2e%2e/acls",
+        "campaigns\\..\\acls",
+        "campaigns/1 2",
+        "campaigns/1\r\nX-Injected: 1",
+        "@evil.example/x",
+        "evil.example:443/x",
+    ],
+)
+def test_other_hosts_traversal_and_odd_characters_are_refused(bad: str) -> None:
     with pytest.raises(ValueError):
         normalise_path(bad)
+
+
+@pytest.mark.parametrize("good", ["123", "abc-DEF_1.2~3", "45812c9b-c296-43d3-c6a0-c5a02f74bf6e"])
+def test_path_segments_accept_ids(good: str) -> None:
+    assert path_segment(good) == good
+
+
+@pytest.mark.parametrize("bad", ["", ".", "..", "1/2", "1?x=1", "../acls", "1 2", "%2e"])
+def test_path_segments_refuse_anything_else(bad: str) -> None:
+    with pytest.raises(ValueError, match="single ID"):
+        path_segment(bad)
+
+
+@respx.mock
+def test_oversized_response_is_refused_without_reading_it_all(
+    client: AppleAdsClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(client_module, "MAX_RESPONSE_BYTES", 1024)
+    respx.post(f"{BASE_URL}/reports/apps/campaigns/query").mock(
+        return_value=httpx.Response(200, content=b"x" * 4096)
+    )
+    with pytest.raises(ResponseTooLargeError, match="larger than"):
+        client.request("POST", "reports/apps/campaigns/query", json_body={}, read_only=True)
+
+
+@respx.mock
+def test_oversized_content_length_is_refused_up_front(
+    client: AppleAdsClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(client_module, "MAX_RESPONSE_BYTES", 1024)
+
+    def stream():
+        yield b"{}"
+
+    respx.get(f"{BASE_URL}/campaigns/1").mock(
+        return_value=httpx.Response(200, headers={"Content-Length": "999999"}, stream=stream())
+    )
+    with pytest.raises(ResponseTooLargeError):
+        client.get_result("campaigns/1")
+
+
+@respx.mock
+def test_response_under_the_cap_is_read(
+    client: AppleAdsClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(client_module, "MAX_RESPONSE_BYTES", 1024)
+    respx.get(f"{BASE_URL}/campaigns/1").mock(
+        return_value=httpx.Response(200, json={"result": {"id": 1}})
+    )
+    assert client.get_result("campaigns/1") == {"id": 1}
+
+
+def test_row_ceiling_is_enforced(client: AppleAdsClient) -> None:
+    with pytest.raises(ValueError, match=str(MAX_ROWS)):
+        client.query("keywords/query", {}, max_items=MAX_ROWS + 1)
 
 
 @respx.mock
@@ -252,12 +334,24 @@ def test_audit_prune_and_purge(tmp_path) -> None:
     log = AuditLog(tmp_path / "a.jsonl", retention_days=30)
     old = log.record(op="old", resource="r", method="PUT", url="u")
     new = log.record(op="new", resource="r", method="PUT", url="u")
-    lines = [json.loads(x) for x in log.path.read_text().splitlines()]
+    lines = [json.loads(x) for x in log.path.read_text(encoding="utf-8").splitlines()]
     lines[0]["ts"] -= 31 * 86400
-    log.path.write_text("\n".join(json.dumps(x) for x in lines) + "\n")
+    log.path.write_text("\n".join(json.dumps(x) for x in lines) + "\n", encoding="utf-8")
     assert log.prune() == 1
     assert log.find(old) is None
     assert log.find(new) is not None
-    assert oct(log.path.stat().st_mode & 0o777) == "0o600"
     assert log.purge() is True
     assert not log.path.exists()
+
+
+@posix_only
+def test_audit_log_stays_owner_only_after_prune(tmp_path) -> None:
+    log = AuditLog(tmp_path / "a.jsonl", retention_days=30)
+    log.record(op="old", resource="r", method="PUT", url="u")
+    log.record(op="new", resource="r", method="PUT", url="u")
+    assert oct(log.path.stat().st_mode & 0o777) == "0o600"
+    lines = [json.loads(x) for x in log.path.read_text(encoding="utf-8").splitlines()]
+    lines[0]["ts"] -= 31 * 86400
+    log.path.write_text("\n".join(json.dumps(x) for x in lines) + "\n", encoding="utf-8")
+    assert log.prune() == 1
+    assert oct(log.path.stat().st_mode & 0o777) == "0o600"

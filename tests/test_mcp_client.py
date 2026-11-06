@@ -399,7 +399,7 @@ async def test_budget_increase_over_limit_needs_confirm(config: Config) -> None:
     assert put.call_count == 2
     sent = json.loads(put.calls[1].request.content)
     assert sent == {"dailyBudget": {"value": {"amount": "15.00", "currency": "GBP"}}}
-    audit = [json.loads(x) for x in config.audit_log.read_text().splitlines()]
+    audit = [json.loads(x) for x in config.audit_log.read_text(encoding="utf-8").splitlines()]
     assert audit[-1]["before"]["dailyBudget"]["value"]["amount"] == "10.00"
     assert audit[-1]["op"] == "set_campaign_daily_budget"
 
@@ -432,7 +432,7 @@ async def test_bulk_keywords_need_confirm_but_dry_run_previews(config: Config) -
     assert preview["confirm_required_when_live"] == "APPLY"
     assert [i["correlationId"] for i in preview["body"]["items"]] == [0, 1]
     assert not route.called
-    [entry] = [json.loads(x) for x in config.audit_log.read_text().splitlines()]
+    [entry] = [json.loads(x) for x in config.audit_log.read_text(encoding="utf-8").splitlines()]
     assert entry["dry_run"] is True and entry["op"] == "add_keywords"
 
 
@@ -496,6 +496,45 @@ async def test_escape_hatch_refuses_other_hosts_and_unconfirmed_writes(config: C
     assert url.is_error and "not a full URL" in url.content[0].text
     assert write.is_error and "confirm='APPLY'" in write.content[0].text
     assert not route.called
+
+
+async def test_escape_hatch_refuses_query_strings_and_odd_paths(config: Config) -> None:
+    with respx.mock(assert_all_called=False) as router:
+        route = router.route(host="api.ads.apple.com").mock(
+            return_value=httpx.Response(200, json={})
+        )
+        async with Client(_build(config)) as c:
+            results = [
+                await c.call_tool("apple_ads_request", {"method": "GET", "path": path})
+                for path in ("/v1/campaigns?limit=1", "/v1/campaigns/%2e%2e/acls", "/v1/a//b")
+            ]
+    assert all(r.is_error for r in results)
+    assert not route.called
+
+
+async def test_string_ids_must_be_single_path_segments(config: Config) -> None:
+    with respx.mock(assert_all_called=False) as router:
+        route = router.route(host="api.ads.apple.com").mock(
+            return_value=httpx.Response(200, json={})
+        )
+        async with Client(_build(config)) as c:
+            get = await c.call_tool("apple_ads_get_brand", {"brand_id": "1/../../acls"})
+            delete = await c.call_tool(
+                "apple_ads_delete_location_group",
+                {"location_group_id": "5/locations", "confirm": "DELETE"},
+            )
+    assert get.is_error and "single ID" in get.content[0].text
+    assert delete.is_error and "single ID" in delete.content[0].text
+    assert not route.called
+
+
+async def test_report_row_ceiling(config: Config) -> None:
+    async with Client(_build(config)) as c:
+        result = await c.call_tool(
+            "apple_ads_report",
+            {"level": "campaigns", "start": "2026-10-01", "end": "2026-10-07", "max_rows": 10**7},
+        )
+    assert result.is_error and "max_rows can be at most" in result.content[0].text
 
 
 @respx.mock
