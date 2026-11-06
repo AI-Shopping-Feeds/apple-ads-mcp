@@ -91,6 +91,13 @@ async def test_every_tool_has_a_catalog_entry(config: Config) -> None:
         assert a.open_world_hint is not None, tool.name
 
 
+def test_every_tool_is_listed_in_the_docs() -> None:
+    root = Path(__file__).resolve().parent.parent
+    docs = (root / "docs" / "tools.md").read_text(encoding="utf-8")
+    missing = [name for name in TOOL_SPECS if f"`{name}`" not in docs]
+    assert not missing, f"add these to docs/tools.md: {missing}"
+
+
 async def test_annotations_are_plausible(config: Config) -> None:
     by_name = {t.name: t.annotations for t in await _tools(_build(config))}
     read_only = {n for n, a in by_name.items() if a and a.read_only_hint}
