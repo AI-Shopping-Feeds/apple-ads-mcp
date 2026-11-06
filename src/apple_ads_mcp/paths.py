@@ -18,7 +18,7 @@ import os
 from pathlib import Path
 
 APP_DIR_NAME = ".apple-ads-mcp"
-PRIVATE_KEY_NAME = "private-key.pem"
+PRIVATE_KEY_NAME = "private-key.pem"  # pragma: allowlist secret (a file name)
 PUBLIC_KEY_NAME = "public-key.pem"
 AUDIT_LOG_NAME = "audit.jsonl"
 

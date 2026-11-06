@@ -91,7 +91,7 @@ claude mcp add --scope user apple-ads \
   --env APPLE_ADS_CLIENT_ID=SEARCHADS.CLIENT_ID \
   --env APPLE_ADS_TEAM_ID=SEARCHADS.TEAM_ID \
   --env APPLE_ADS_KEY_ID=KEY_ID \
-  --env APPLE_ADS_PRIVATE_KEY_PATH=PATH_TO_PRIVATE_KEY \
+  --env APPLE_ADS_PRIVATE_KEY_PATH=/abs/path/private-key.pem \
   --env APPLE_ADS_DRY_RUN=true \
   -- uvx --from git+https://github.com/AI-Shopping-Feeds/apple-ads-mcp.git apple-ads-mcp
 ```
@@ -110,7 +110,7 @@ its full path from `which uvx`.
     "APPLE_ADS_CLIENT_ID": "SEARCHADS.CLIENT_ID",
     "APPLE_ADS_TEAM_ID": "SEARCHADS.TEAM_ID",
     "APPLE_ADS_KEY_ID": "KEY_ID",
-    "APPLE_ADS_PRIVATE_KEY_PATH": "PATH_TO_PRIVATE_KEY",
+    "APPLE_ADS_PRIVATE_KEY_PATH": "/abs/path/private-key.pem",
     "APPLE_ADS_DRY_RUN": "true"
   }
 }
@@ -125,7 +125,7 @@ user-level file, never a project's `.cursor/mcp.json`).
 [mcp_servers.apple-ads]
 command = "uvx"
 args = ["--from", "git+https://github.com/AI-Shopping-Feeds/apple-ads-mcp.git", "apple-ads-mcp"]
-env = { APPLE_ADS_CLIENT_ID = "SEARCHADS.CLIENT_ID", APPLE_ADS_TEAM_ID = "SEARCHADS.TEAM_ID", APPLE_ADS_KEY_ID = "KEY_ID", APPLE_ADS_PRIVATE_KEY_PATH = "PATH_TO_PRIVATE_KEY", APPLE_ADS_DRY_RUN = "true" }
+env = { APPLE_ADS_CLIENT_ID = "SEARCHADS.CLIENT_ID", APPLE_ADS_TEAM_ID = "SEARCHADS.TEAM_ID", APPLE_ADS_KEY_ID = "KEY_ID", APPLE_ADS_PRIVATE_KEY_PATH = "/abs/path/private-key.pem", APPLE_ADS_DRY_RUN = "true" }
 ```
 
 **Any other client** that runs local servers: the command `uvx` with the
